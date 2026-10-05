@@ -11,7 +11,6 @@ from datetime import datetime, timedelta
 from threading import Thread
 from functools import wraps
 
-# Install dependencies
 required = ['flask', 'flask-cors', 'flask-socketio', 'flask-login', 'bcrypt', 'eventlet']
 for pkg in required:
     try:
@@ -26,7 +25,6 @@ from flask_socketio import SocketIO, emit
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 import bcrypt
 
-# Setup paths
 DESKTOP_PATH = os.path.join(os.path.expanduser("~"), "Desktop", "Windows-SIEM")
 os.makedirs(DESKTOP_PATH, exist_ok=True)
 DB_PATH = os.path.join(DESKTOP_PATH, "siem.db")
@@ -39,7 +37,6 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# User class
 class User(UserMixin):
     def __init__(self, id, username, role):
         self.id = id
@@ -52,24 +49,20 @@ class User(UserMixin):
     def is_analyst(self):
         return self.role == 'analyst'
 
-# Database functions
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # Logs table
     c.execute('''CREATE TABLE IF NOT EXISTS logs (
         id INTEGER PRIMARY KEY, timestamp TEXT, event_id INTEGER,
         level TEXT, source TEXT, channel TEXT, message TEXT,
         username TEXT, computer TEXT, processed INTEGER DEFAULT 0)''')
     
-    # Alerts table
     c.execute('''CREATE TABLE IF NOT EXISTS alerts (
         id INTEGER PRIMARY KEY, timestamp TEXT, severity TEXT,
         title TEXT, description TEXT, rule_name TEXT, username TEXT,
         event_id INTEGER, mitre_tactic TEXT, acknowledged INTEGER DEFAULT 0)''')
     
-    # Users table
     c.execute('''CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY, username TEXT UNIQUE, 
         password_hash TEXT, role TEXT, created_at TEXT)''')
@@ -77,22 +70,19 @@ def init_db():
     conn.commit()
     conn.close()
     
-    # Create default users
     create_default_users()
 
 def create_default_users():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # Check if users exist
     c.execute("SELECT COUNT(*) FROM users")
     if c.fetchone()[0] == 0:
-        # Create admin user
+       
         admin_hash = bcrypt.hashpw(b'admin123', bcrypt.gensalt())
         c.execute("INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
                   ('admin', admin_hash, 'admin', datetime.now().isoformat()))
-        
-        # Create analyst user
+  
         analyst_hash = bcrypt.hashpw(b'analyst123', bcrypt.gensalt())
         c.execute("INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
                   ('analyst', analyst_hash, 'analyst', datetime.now().isoformat()))
@@ -126,7 +116,7 @@ def verify_password(username, password):
         return bcrypt.checkpw(password.encode(), row[0])
     return False
 
-# Login manager
+
 @login_manager.user_loader
 def load_user(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -138,7 +128,6 @@ def load_user(user_id):
         return User(row[0], row[1], row[3])
     return None
 
-# Role decorator
 def admin_required(f):
     @wraps(f)
     @login_required
@@ -148,7 +137,6 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# Log functions
 def add_log(d):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -204,19 +192,19 @@ def get_stats():
     c.execute("SELECT COUNT(*) FROM alerts")
     ta = c.fetchone()[0]
     
-    # Get hourly stats
+ 
     c.execute("""SELECT strftime('%H', timestamp) as hour, COUNT(*) as count 
                  FROM logs WHERE timestamp > datetime('now', '-24 hours')
                  GROUP BY hour ORDER BY hour""")
     hourly = [{'hour': r[0], 'count': r[1]} for r in c.fetchall()]
     
-    # Get severity distribution
+    
     c.execute("""SELECT severity, COUNT(*) as count FROM alerts 
                  WHERE timestamp > datetime('now', '-24 hours')
                  GROUP BY severity""")
     severity = [{'severity': r[0], 'count': r[1]} for r in c.fetchall()]
     
-    # Get top event sources
+   
     c.execute("""SELECT source, COUNT(*) as count FROM logs 
                  WHERE timestamp > datetime('now', '-24 hours')
                  GROUP BY source ORDER BY count DESC LIMIT 10""")
@@ -249,7 +237,6 @@ def mark_processed():
     conn.commit()
     conn.close()
 
-# Event collection
 def collect():
     total = 0
     for ch in ['Security', 'System', 'Application']:
@@ -311,7 +298,7 @@ def detect():
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     
-    # Brute force
+   
     c.execute("""SELECT username,computer,COUNT(*)as count FROM logs 
                  WHERE event_id=4625 AND processed=0 
                  AND timestamp>datetime('now','-1 minutes') 
@@ -330,7 +317,7 @@ def detect():
         alert['id'] = aid
         alerts.append(alert)
     
-    # Log cleared
+  
     c.execute("SELECT username,computer FROM logs WHERE event_id=1102 AND processed=0")
     for row in c.fetchall():
         alert = {
@@ -346,7 +333,7 @@ def detect():
         alert['id'] = aid
         alerts.append(alert)
     
-    # New service
+
     c.execute("SELECT message,computer FROM logs WHERE event_id=7045 AND processed=0")
     for row in c.fetchall():
         alert = {
@@ -362,7 +349,7 @@ def detect():
         alert['id'] = aid
         alerts.append(alert)
     
-    # Privileged access
+   
     c.execute("""SELECT username FROM logs WHERE event_id=4672 AND processed=0 
                  AND timestamp>datetime('now','-1 minutes')""")
     for row in c.fetchall():
@@ -388,7 +375,7 @@ def detect():
     
     return len(alerts)
 
-# HTML Templates
+
 LOGIN_HTML = '''
 <!DOCTYPE html>
 <html>
@@ -1088,11 +1075,9 @@ if __name__ == '__main__':
 """)
     init_db()
     
-    # Initial collection
     collect()
     detect()
-    
-    # Start background task
+ 
     socketio.start_background_task(bg_task)
     
     print("\n🚀 Starting server at http://localhost:5000")
